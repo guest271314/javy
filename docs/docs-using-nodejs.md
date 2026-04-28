@@ -108,14 +108,7 @@ function writeOutput(output) {
 
 `host.js`
 ```javascript
-import { readFile } from "node:fs/promises";
-import {
-  closeSync,
-  openSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { open, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -147,22 +140,24 @@ async function runJavy(pluginModule, embeddedModule, input) {
   const stderrFilePath = join(workDir, `stderr.wasm.${uniqueId}.txt`);
 
   // 👋 send data to the Wasm instance
-  writeFileSync(stdinFilePath, JSON.stringify(input), { encoding: "utf8" });
+  await writeFile(stdinFilePath, JSON.stringify(input), { encoding: "utf8" });
 
-  const [stdinFileFd, stdoutFileFd, stderrFileFd] = [
-    openSync(stdinFilePath, "r"),
-    openSync(stdoutFilePath, "a"),
-    openSync(stderrFilePath, "a"),
-  ];
+  const [stdinFileFd, stdoutFileFd, stderrFileFd] = await Promise.all([
+    open(stdinFilePath, "r"),
+    open(stdoutFilePath, "a"),
+    open(stderrFilePath, "a"),
+  ]);
+
+  // console.log(stdinFileFd.fd, stdoutFileFd.fd, stderrFileFd.fd);
 
   const wasiOptions = {
     version: "preview1",
     returnOnExit: true,
     args: [],
     env: {},
-    stdin: stdinFileFd,
-    stdout: stdoutFileFd,
-    stderr: stderrFileFd,
+    stdin: stdinFileFd.fd,
+    stdout: stdoutFileFd.fd,
+    stderr: stderrFileFd.fd,
   };
 
   try {
@@ -202,10 +197,10 @@ async function runJavy(pluginModule, embeddedModule, input) {
     wasi?.initialize?.(pluginInstance);
     instance.exports._start();
 
-    const [out, err] = [
+    const [out, err] = await Promise.all([
       readOutput(stdoutFilePath),
       readOutput(stderrFilePath),
-    ];
+    ]);
     if (err) {
       throw new Error(err);
     }
@@ -220,23 +215,26 @@ async function runJavy(pluginModule, embeddedModule, input) {
     }
     throw e;
   } finally {
-    closeSync(stdinFileFd);
-    closeSync(stdoutFileFd);
-    closeSync(stderrFileFd);
-    rmSync(stdinFilePath);
-    rmSync(stdoutFilePath);
-    rmSync(stderrFilePath);
+    Promise.all([
+      stdinFileFd.close(),
+      stdoutFileFd.close(),
+      stderrFileFd.close(),
+      rm(stdinFilePath),
+      rm(stdoutFilePath),
+      rm(stderrFilePath),
+    ]);
   }
 }
 
-function readOutput(filePath) {
-  const str = readFileSync(filePath, "utf8").trim();
+async function readOutput(filePath) {
+  const str = (await readFile(filePath, "utf8")).trim();
   try {
     return JSON.parse(str);
   } catch {
     return str;
   }
 }
+
 ```
 `wasi.js`
 ```javascript
