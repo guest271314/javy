@@ -102,7 +102,7 @@ function writeOutput(output) {
 
 `host.mjs`
 ```javascript
-import { readFile, writeFile, open } from "node:fs/promises";
+import { readFile, writeFile, open, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { WASI } from "wasi";
@@ -188,6 +188,9 @@ async function runJavy(pluginModule, embeddedModule, input) {
       stdinFile.close(),
       stdoutFile.close(),
       stderrFile.close(),
+      rm(stdinFilePath),
+      rm(stdoutFilePath),
+      rm(stderrFilePath),
     ]);
   }
 }
